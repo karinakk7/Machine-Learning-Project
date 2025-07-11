@@ -4,4 +4,9 @@ raw_video/
 __pycache__/
 *.pyc
 .keras
+models/
+dataset/abgelenkt/
+dataset/fokussiert/
+dataset/handy/
+dataset/nicht_anwesend/
 
