@@ -5,30 +5,9 @@ import cv2
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-import tensorflow as tf
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import (Dense, Dropout, GlobalAveragePooling2D, BatchNormalization, 
-                                   LSTM, TimeDistributed, Conv1D, MaxPooling1D, Flatten,
-                                   Input, Concatenate, Conv2D, MaxPooling2D, GRU, Bidirectional)
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from tensorflow.keras.utils import to_categorical
-import tensorflow as tf
-
-
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print("GPU-Speicher konnte nicht angepasst werden:", e)
-
-
-import json
-import math
+import torch
+import torch.nn as nn
+import torchvision.models as models
 import seaborn as sns
 from scipy import signal
 from scipy.fft import fft
@@ -235,453 +214,526 @@ class EnhancedFocusTrainer:
         print(f"Geladene Sequenzen: {len(X_sequences)}")
         return np.array(X_sequences), np.array(X_frequency), np.array(y_labels)
     
-    def build_improved_temporal_cnn(self, num_classes, sequence_length):
-        """
-        VERBESSERTE Temporal CNN Architektur mit Transfer Learning Features
-        """
-        model = Sequential([
-            Input(shape=(sequence_length, *self.img_size, 3)),
-            
-            # Erste Conv-Block (mehr Filter, bessere Feature-Extraktion)
-            TimeDistributed(Conv2D(32, (3, 3), activation='relu', padding='same')),
-            TimeDistributed(BatchNormalization()),
-            TimeDistributed(Conv2D(32, (3, 3), activation='relu', padding='same')),
-            TimeDistributed(MaxPooling2D(2, 2)),
-            TimeDistributed(Dropout(0.25)),
-            
-            # Zweite Conv-Block
-            TimeDistributed(Conv2D(64, (3, 3), activation='relu', padding='same')),
-            TimeDistributed(BatchNormalization()),
-            TimeDistributed(Conv2D(64, (3, 3), activation='relu', padding='same')),
-            TimeDistributed(MaxPooling2D(2, 2)),
-            TimeDistributed(Dropout(0.25)),
-            
-            # Dritte Conv-Block
-            TimeDistributed(Conv2D(128, (3, 3), activation='relu', padding='same')),
-            TimeDistributed(BatchNormalization()),
-            TimeDistributed(Conv2D(128, (3, 3), activation='relu', padding='same')),
-            TimeDistributed(MaxPooling2D(2, 2)),
-            TimeDistributed(Dropout(0.25)),
-            
-            # Feature-Extraktion
-            TimeDistributed(GlobalAveragePooling2D()),
-            TimeDistributed(Dense(256, activation='relu')),
-            TimeDistributed(BatchNormalization()),
-            TimeDistributed(Dropout(0.5)),
-            
-            # Bidirektionale LSTM für bessere Temporal-Features
-            Bidirectional(LSTM(128, return_sequences=True, dropout=0.3, recurrent_dropout=0.3)),
-            Bidirectional(LSTM(64, dropout=0.3, recurrent_dropout=0.3)),
-            
-            # Klassifikations-Schichten
-            Dense(128, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.5),
-            Dense(64, activation='relu'),
-            Dropout(0.3),
-            Dense(num_classes, activation='softmax')
-        ])
-        
-        return model       
-    def build_temporal_transfer_model(self, num_classes, sequence_length):
-        """
-        NEU: Temporal CNN mit Transfer Learning Base
-        """
-        # Vortrainierte Basis
-        base_model = MobileNetV2(
-            input_shape=(*self.img_size, 3),
-            include_top=False,
-            weights='imagenet'
-        )
-        base_model.trainable = False  # Zunächst einfrieren
-        
-        # Feature-Extraktor für jedes Frame
-        feature_extractor = Sequential([
-            base_model,
-            GlobalAveragePooling2D(),
-            Dense(256, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.3)
-        ])
-        
-        # Temporal Modell
-        model = Sequential([
-            Input(shape=(sequence_length, *self.img_size, 3)),
-            TimeDistributed(feature_extractor),
-            
-            # Temporal Processing
-            Bidirectional(LSTM(128, return_sequences=True, dropout=0.3)),
-            Bidirectional(LSTM(64, dropout=0.3)),
-            
-            Dense(128, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.5),
-            Dense(num_classes, activation='softmax')
-        ])
-        
-        return model
+def build_transfer_learning_model(self, num_classes):
+    base_model = models.mobilenet_v2(pretrained=True)
+    for param in base_model.features.parameters():
+        param.requires_grad = False
+
+    model = nn.Sequential(
+        base_model.features,
+        nn.AdaptiveAvgPool2d(1),
+        nn.Flatten(),
+        nn.BatchNorm1d(1280),
+        nn.Dropout(0.4),
+        nn.Linear(1280, 256),
+        nn.ReLU(),
+        nn.BatchNorm1d(256),
+        nn.Dropout(0.3),
+        nn.Linear(256, 128),
+        nn.ReLU(),
+        nn.BatchNorm1d(128),
+        nn.Dropout(0.2),
+        nn.Linear(128, num_classes)
+    )
+    return model
+
+
+def build_improved_temporal_cnn(num_classes, sequence_length, img_size=(224, 224)):
+    H, W = img_size
+
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.sequence_length = sequence_length
+
+            # TimeDistributed Conv-Blocks (als 2D, über Zeitachse geschleift)
+            self.conv_block1 = nn.Sequential(
+                nn.Conv2d(3, 32, kernel_size=3, padding=1),
+                nn.BatchNorm2d(32),
+                nn.ReLU(),
+                nn.Conv2d(32, 32, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Dropout(0.25),
+            )
+            self.conv_block2 = nn.Sequential(
+                nn.Conv2d(32, 64, kernel_size=3, padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.Conv2d(64, 64, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Dropout(0.25),
+            )
+            self.conv_block3 = nn.Sequential(
+                nn.Conv2d(64, 128, kernel_size=3, padding=1),
+                nn.BatchNorm2d(128),
+                nn.ReLU(),
+                nn.Conv2d(128, 128, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Dropout(0.25),
+            )
+
+            # GlobalAveragePooling + Dense pro Frame
+            self.global_pool = nn.AdaptiveAvgPool2d(1)
+            self.frame_dense = nn.Sequential(
+                nn.Linear(128, 256),
+                nn.BatchNorm1d(256),
+                nn.ReLU(),
+                nn.Dropout(0.5)
+            )
+
+            # LSTM
+            self.lstm1 = nn.LSTM(
+                input_size=256,
+                hidden_size=128,
+                batch_first=True,
+                bidirectional=True,
+                dropout=0.3
+            )
+            self.lstm2 = nn.LSTM(
+                input_size=256,
+                hidden_size=64,
+                batch_first=True,
+                bidirectional=True,
+                dropout=0.3
+            )
+
+            # Klassifikations-Teil
+            self.classifier = nn.Sequential(
+                nn.Linear(128, 128),
+                nn.BatchNorm1d(128),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(128, 64),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(64, num_classes)
+            )
+
+        def forward(self, x):
+            B, T, C, H, W = x.size()
+            frame_features = []
+
+            for t in range(T):
+                xt = x[:, t]                          # (B, C, H, W)
+                out = self.conv_block1(xt)
+                out = self.conv_block2(out)
+                out = self.conv_block3(out)
+                out = self.global_pool(out)           # (B, 128, 1, 1)
+                out = out.view(B, -1)                 # (B, 128)
+                out = self.frame_dense(out)           # (B, 256)
+                frame_features.append(out)
+
+            x_seq = torch.stack(frame_features, dim=1)  # (B, T, 256)
+
+            x_seq, _ = self.lstm1(x_seq)  # (B, T, 256)
+            x_seq, _ = self.lstm2(x_seq)  # (B, T, 128)
+            x_last = x_seq[:, -1, :]      # (B, 128)
+
+            return self.classifier(x_last)
+
+    return Model()
+
+
+def build_temporal_transfer_model(num_classes, sequence_length, img_size=(224, 224)):
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.sequence_length = sequence_length
+
+            # MobileNetV2 als Feature-Extraktor (pro Frame)
+            mobilenet = models.mobilenet_v2(pretrained=True).features
+            for param in mobilenet.parameters():
+                param.requires_grad = False
+            self.feature_extractor = nn.Sequential(
+                mobilenet,
+                nn.AdaptiveAvgPool2d(1),  # GlobalAveragePooling2D
+            )
+            self.feature_dim = 1280  # MobileNetV2-Ausgabe vor Kopf
+
+            self.frame_dense = nn.Sequential(
+                nn.Linear(self.feature_dim, 256),
+                nn.ReLU(),
+                nn.BatchNorm1d(256),
+                nn.Dropout(0.3)
+            )
+
+            # LSTM (bidirectional)
+            self.lstm1 = nn.LSTM(
+                input_size=256,
+                hidden_size=128,
+                batch_first=True,
+                dropout=0.3,
+                bidirectional=True
+            )
+            self.lstm2 = nn.LSTM(
+                input_size=256,
+                hidden_size=64,
+                batch_first=True,
+                dropout=0.3,
+                bidirectional=True
+            )
+
+            # Klassifikation
+            self.classifier = nn.Sequential(
+                nn.Linear(128, 128),
+                nn.ReLU(),
+                nn.BatchNorm1d(128),
+                nn.Dropout(0.5),
+                nn.Linear(128, num_classes)
+            )
+
+        def forward(self, x):
+            B, T, C, H, W = x.size()
+            features = []
+
+            for t in range(T):
+                xt = x[:, t]                            # (B, C, H, W)
+                out = self.feature_extractor(xt)        # (B, 1280, 1, 1)
+                out = out.view(B, -1)                   # (B, 1280)
+                out = self.frame_dense(out)             # (B, 256)
+                features.append(out)
+
+            x_seq = torch.stack(features, dim=1)        # (B, T, 256)
+            x_seq, _ = self.lstm1(x_seq)                # (B, T, 256)
+            x_seq, _ = self.lstm2(x_seq)                # (B, T, 128)
+            x_last = x_seq[:, -1, :]                    # letztes Zeitschritt
+
+            return self.classifier(x_last)
+
+    return Model()
+
     
-    def build_transfer_learning_model(self, num_classes):
-        """Dein ursprüngliches Transfer Learning Modell"""
-        base_model = MobileNetV2(weights='imagenet', include_top=False, 
-                               input_shape=(*self.img_size, 3))
-        base_model.trainable = False
-        
-        model = Sequential([
-            base_model,
-            GlobalAveragePooling2D(),
-            BatchNormalization(),
-            Dropout(0.4),
-            Dense(256, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.3),
-            Dense(128, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.2),
-            Dense(num_classes, activation='softmax')
-        ])
-        
-        return model
+def build_frequency_model(num_classes, frequency_feature_dim):
+    model = nn.Sequential(
+        nn.Linear(frequency_feature_dim, 512),
+        nn.ReLU(),
+        nn.BatchNorm1d(512),
+        nn.Dropout(0.5),
+
+        nn.Linear(512, 256),
+        nn.ReLU(),
+        nn.BatchNorm1d(256),
+        nn.Dropout(0.4),
+
+        nn.Linear(256, 128),
+        nn.ReLU(),
+        nn.BatchNorm1d(128),
+        nn.Dropout(0.3),
+
+        nn.Linear(128, 64),
+        nn.ReLU(),
+        nn.Dropout(0.2),
+
+        nn.Linear(64, num_classes)
+    )
+    return model
+
     
-    def build_frequency_model(self, num_classes, frequency_feature_dim):
-        """Modell basierend auf Frequenz-Features"""
-        model = Sequential([
-            Input(shape=(frequency_feature_dim,)),
-            Dense(512, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.5),
-            Dense(256, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.4),
-            Dense(128, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.3),
-            Dense(64, activation='relu'),
-            Dropout(0.2),
-            Dense(num_classes, activation='softmax')
-        ])
-        
-        return model
+def build_temporal_cnn(num_classes, sequence_length, img_size=(224, 224)):
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = nn.Sequential(
+                nn.Conv2d(3, 16, 3, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.BatchNorm2d(16)
+            )
+            self.conv2 = nn.Sequential(
+                nn.Conv2d(16, 32, 3, padding=1),
+                nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.BatchNorm2d(32)
+            )
+            self.conv3 = nn.Sequential(
+                nn.Conv2d(32, 64, 3, padding=1),
+                nn.ReLU(),
+                nn.AdaptiveAvgPool2d(1),  # GlobalAveragePooling2D
+                nn.Dropout(0.3)
+            )
+
+            self.lstm1 = nn.LSTM(input_size=64, hidden_size=64, batch_first=True, dropout=0.3, bidirectional=False)
+            self.lstm2 = nn.LSTM(input_size=64, hidden_size=32, batch_first=True, dropout=0.3, bidirectional=False)
+
+            self.classifier = nn.Sequential(
+                nn.Linear(32, 64),
+                nn.ReLU(),
+                nn.Dropout(0.4),
+                nn.Linear(64, num_classes)
+            )
+
+        def forward(self, x):
+            B, T, C, H, W = x.shape
+            features = []
+
+            for t in range(T):
+                xt = x[:, t]               # (B, C, H, W)
+                xt = self.conv1(xt)
+                xt = self.conv2(xt)
+                xt = self.conv3(xt)
+                xt = xt.view(B, -1)        # (B, 64)
+                features.append(xt)
+
+            x_seq = torch.stack(features, dim=1)  # (B, T, 64)
+            x_seq, _ = self.lstm1(x_seq)          # (B, T, 64)
+            x_seq, _ = self.lstm2(x_seq)          # (B, T, 32)
+            x_last = x_seq[:, -1, :]              # (B, 32)
+
+            return self.classifier(x_last)
+
+    return Model()
     
-    def build_temporal_cnn(self, num_classes, sequence_length):
-        """CNN für Zeitsequenzen - KORRIGIERT"""
-        model = Sequential([
-            Input(shape=(sequence_length, *self.img_size, 3)),
-            
-            # Erste Conv-Schicht
-            TimeDistributed(Conv2D(16, (3, 3), activation='relu')),
-            TimeDistributed(MaxPooling2D(2, 2)),
-            TimeDistributed(BatchNormalization()),
-            
-            # Zweite Conv-Schicht
-            TimeDistributed(Conv2D(32, (3, 3), activation='relu')),
-            TimeDistributed(MaxPooling2D(2, 2)),
-            TimeDistributed(BatchNormalization()),
-            
-            # Dritte Conv-Schicht
-            TimeDistributed(Conv2D(64, (3, 3), activation='relu')),
-            TimeDistributed(GlobalAveragePooling2D()),
-            TimeDistributed(Dropout(0.3)),
-            
-            # LSTM-Schichten
-            LSTM(64, return_sequences=True, dropout=0.3),
-            LSTM(32, dropout=0.3),
-            
-            # Dense-Schichten
-            Dense(64, activation='relu'),
-            Dropout(0.4),
-            Dense(num_classes, activation='softmax')
-        ])
-        
-        return model
+from torchvision.models import mobilenet_v2
+
+def build_hybrid_model(num_classes, frequency_feature_dim, img_size=(224, 224)):
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            mobilenet = mobilenet_v2(pretrained=True).features
+            for p in mobilenet.parameters():
+                p.requires_grad = False
+
+            self.image_branch = nn.Sequential(
+                mobilenet,
+                nn.AdaptiveAvgPool2d(1),
+                nn.Flatten(),
+                nn.Linear(1280, 256),
+                nn.ReLU(),
+                nn.Dropout(0.3)
+            )
+
+            self.freq_branch = nn.Sequential(
+                nn.Linear(frequency_feature_dim, 128),
+                nn.ReLU(),
+                nn.BatchNorm1d(128),
+                nn.Dropout(0.3),
+                nn.Linear(128, 64),
+                nn.ReLU()
+            )
+
+            self.classifier = nn.Sequential(
+                nn.Linear(256 + 64, 128),
+                nn.ReLU(),
+                nn.Dropout(0.4),
+                nn.Linear(128, num_classes)
+            )
+
+        def forward(self, img, freq):
+            x1 = self.image_branch(img)
+            x2 = self.freq_branch(freq)
+            x = torch.cat([x1, x2], dim=1)
+            return self.classifier(x)
+
+    return Model()
+import torch
+import torch.nn as nn
+
+def build_lstm_feature_model(num_classes, sequence_length, feature_dim):
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+
+            self.lstm1 = nn.LSTM(
+                input_size=feature_dim,
+                hidden_size=128,
+                batch_first=True,
+                bidirectional=False
+            )
+            self.dropout1 = nn.Dropout(0.3)
+
+            self.lstm2 = nn.LSTM(
+                input_size=128,
+                hidden_size=64,
+                batch_first=True,
+                bidirectional=False
+            )
+            self.dropout2 = nn.Dropout(0.3)
+
+            self.lstm3 = nn.LSTM(
+                input_size=64,
+                hidden_size=32,
+                batch_first=True,
+                bidirectional=False
+            )
+
+            self.classifier = nn.Sequential(
+                nn.Linear(32, 64),
+                nn.ReLU(),
+                nn.Dropout(0.4),
+                nn.Linear(64, num_classes)
+            )
+
+        def forward(self, x):  # x: (B, T, F)
+            x, _ = self.lstm1(x)     # (B, T, 128)
+            x = self.dropout1(x)
+
+            x, _ = self.lstm2(x)     # (B, T, 64)
+            x = self.dropout2(x)
+
+            x, _ = self.lstm3(x)     # (B, T, 32)
+            x = x[:, -1, :]          # letzter Zeitschritt → (B, 32)
+
+            return self.classifier(x)
+
+    return Model()
+
     
-    def build_lstm_feature_model(self, num_classes, sequence_length, feature_dim):
-        """LSTM für Feature-Sequenzen"""
-        model = Sequential([
-            Input(shape=(sequence_length, feature_dim)),
-            LSTM(128, return_sequences=True),
-            Dropout(0.3),
-            LSTM(64, return_sequences=True),
-            Dropout(0.3),
-            LSTM(32),
-            Dense(64, activation='relu'),
-            Dropout(0.4),
-            Dense(num_classes, activation='softmax')
-        ])
-        
-        return model
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+import torch.nn as nn
+import torch.optim as optim
+import json
+
+def train_model(self, model_type='temporal_cnn', epochs=30):
+    print(f"\n=== Training {model_type} Model ===")
     
-    def build_hybrid_model(self, num_classes, sequence_length, frequency_feature_dim):
-        """Hybrid-Modell: Transfer Learning + Frequenz-Features"""
-        
-        # Transfer Learning Branch
-        base_model = MobileNetV2(weights='imagenet', include_top=False, 
-                               input_shape=(*self.img_size, 3))
-        base_model.trainable = False
-        
-        image_input = Input(shape=(*self.img_size, 3))
-        x1 = base_model(image_input)
-        x1 = GlobalAveragePooling2D()(x1)
-        x1 = Dense(256, activation='relu')(x1)
-        x1 = Dropout(0.3)(x1)
-        
-        # Frequenz Branch
-        freq_input = Input(shape=(frequency_feature_dim,))
-        x2 = Dense(128, activation='relu')(freq_input)
-        x2 = BatchNormalization()(x2)
-        x2 = Dropout(0.3)(x2)
-        x2 = Dense(64, activation='relu')(x2)
-        
-        # Kombinieren
-        combined = Concatenate()([x1, x2])
-        combined = Dense(128, activation='relu')(combined)
-        combined = Dropout(0.4)(combined)
-        output = Dense(num_classes, activation='softmax')(combined)
-        
-        model = Model(inputs=[image_input, freq_input], outputs=output)
-        return model
-    
-    def train_model(self, model_type='temporal_cnn', epochs=50):
-        """
-        Trainiert das ausgewählte Modell - VERBESSERT
-        """
-        print(f"\n=== Training {model_type} Model ===")
-        
-        if model_type in ['temporal_cnn', 'temporal_transfer', 'lstm_features', 'hybrid_model', 'frequency_analysis']:
-            # Video-Sequenzen laden
-            X_sequences, X_frequency, y_labels = self.load_video_sequences()
-            
-            if len(X_sequences) == 0:
-                print("FEHLER: Keine Daten geladen!")
-                return None, None
-            
-            # Label Encoding
-            label_encoder = LabelEncoder()
-            y_encoded = label_encoder.fit_transform(y_labels)
-            y_categorical = to_categorical(y_encoded)
-            num_classes = len(label_encoder.classes_)
-            
-            print(f"Anzahl Klassen: {num_classes}")
-            print(f"Klassen: {label_encoder.classes_}")
-            print(f"Datenform: {X_sequences.shape}")
-            
-            # Train/Val Split
-            if model_type == 'frequency_analysis':
-                X_train, X_val, y_train, y_val = train_test_split(
-                    X_frequency, y_categorical, test_size=0.2, random_state=42, stratify=y_encoded
-                )
-                model = self.build_frequency_model(num_classes, X_frequency.shape[1])
-                
-            elif model_type in ['temporal_cnn', 'temporal_transfer']:
-                X_train, X_val, y_train, y_val = train_test_split(
-                    X_sequences, y_categorical, test_size=0.2, random_state=42, stratify=y_encoded
-                )
-                if model_type == 'temporal_cnn':
-                    model = self.build_improved_temporal_cnn(num_classes, X_sequences.shape[1])
-                else:
-                    model = self.build_temporal_transfer_model(num_classes, X_sequences.shape[1])
-                
-            elif model_type == 'lstm_features':
-                # Features über Zeit für LSTM vorbereiten
-                X_freq_sequences = []
-                for seq in X_sequences:
-                    seq_uint8 = [(frame * 255).astype(np.uint8) for frame in seq]
-                    seq_features = self.extract_frequency_features(seq_uint8)
-                    X_freq_sequences.append(seq_features)
-                X_freq_sequences = np.array(X_freq_sequences)
-                
-                X_train, X_val, y_train, y_val = train_test_split(
-                    X_freq_sequences, y_categorical, test_size=0.2, random_state=42, stratify=y_encoded
-                )
-                model = self.build_lstm_feature_model(num_classes, X_freq_sequences.shape[1], X_freq_sequences.shape[2])
-                
-            elif model_type == 'hybrid_model':
-                # Einzelbilder für Transfer Learning (erstes Bild jeder Sequenz)
-                X_images = X_sequences[:, 0]
-                
-                X_train_seq, X_val_seq, X_train_freq, X_val_freq, y_train, y_val = train_test_split(
-                    X_images, X_frequency, y_categorical, test_size=0.2, random_state=42, stratify=y_encoded
-                )
-                
-                model = self.build_hybrid_model(num_classes, X_sequences.shape[1], X_frequency.shape[1])
-            
-            # Klassen-Info speichern
-            class_info = {i: class_name for i, class_name in enumerate(label_encoder.classes_)}
-            with open(f'{self.model_save_dir}class_indices_{model_type}.json', 'w') as f:
-                json.dump(class_info, f, indent=2)
-            
-        else:
-            # Standard Transfer Learning
-            return self.train_transfer_learning_model(epochs)
-        
-        # Modell kompilieren mit optimierter Lernrate
-        optimizer = Adam(learning_rate=0.001)
-        if model_type in ['temporal_cnn', 'temporal_transfer']:
-            optimizer = Adam(learning_rate=0.0005)  # Niedrigere Lernrate für komplexe Modelle
-        
-        model.compile(
-            optimizer=optimizer,
-            loss='categorical_crossentropy',
-            metrics=['accuracy']
-        )
-        
-        print(f"Modell-Architektur ({model_type}):")
-        model.summary()
-        
-        # Verbesserte Callbacks
-        callbacks = [
-            EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True, verbose=1),
-            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=7, min_lr=1e-7, verbose=1),
-            ModelCheckpoint(f'{self.model_save_dir}best_{model_type}_model.keras', 
-                          monitor='val_accuracy', save_best_only=True, verbose=1)
-        ]
-        
-        # Training
-        try:
-            if model_type == 'hybrid_model':
-                history = model.fit(
-                    [X_train_seq, X_train_freq], y_train,
-                    validation_data=([X_val_seq, X_val_freq], y_val),
-                    epochs=epochs,
-                    batch_size=self.batch_size,
-                    callbacks=callbacks,
-                    verbose=1
-                )
-            else:
-                history = model.fit(
-                    X_train, y_train,
-                    validation_data=(X_val, y_val),
-                    epochs=epochs,
-                    batch_size=self.batch_size,
-                    callbacks=callbacks,
-                    verbose=1
-                )
-        except Exception as e:
-            print(f"Training-Fehler: {e}")
+    if model_type in ['temporal_cnn', 'temporal_transfer', 'lstm_features', 'hybrid_model', 'frequency_analysis']:
+        X_sequences, X_frequency, y_labels = self.load_video_sequences()
+        if len(X_sequences) == 0:
+            print("FEHLER: Keine Daten geladen!")
             return None, None
-        
-        # Finales Modell speichern
-        model.save(f'{self.model_save_dir}final_{model_type}_model.keras')
-        
-        # Scaler für Frequenz-Features speichern
-        if model_type in ['frequency_analysis', 'hybrid_model']:
-            scaler = StandardScaler()
-            scaler.fit(X_frequency if model_type == 'frequency_analysis' else X_train_freq)
-            with open(f'{self.model_save_dir}frequency_scaler_{model_type}.pkl', 'wb') as f:
-                pickle.dump(scaler, f)
-        
-        print(f"\n{model_type} Modell Training abgeschlossen!")
-        print(f"Gespeichert: {self.model_save_dir}final_{model_type}_model.keras")
-        
-        # Training-Verlauf plotten
-        self.plot_training_history(history, model_type)
-        
-        return model, history
-    
-    def plot_training_history(self, history, model_type):
-        """Plottet den Trainingsverlauf"""
-        try:
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-            
-            # Accuracy
-            ax1.plot(history.history['accuracy'], label='Training Accuracy')
-            ax1.plot(history.history['val_accuracy'], label='Validation Accuracy')
-            ax1.set_title(f'{model_type} - Accuracy')
-            ax1.set_xlabel('Epoch')
-            ax1.set_ylabel('Accuracy')
-            ax1.legend()
-            
-            # Loss
-            ax2.plot(history.history['loss'], label='Training Loss')
-            ax2.plot(history.history['val_loss'], label='Validation Loss')
-            ax2.set_title(f'{model_type} - Loss')
-            ax2.set_xlabel('Epoch')
-            ax2.set_ylabel('Loss')
-            ax2.legend()
-            
-            plt.tight_layout()
-            plt.savefig(f'{self.model_save_dir}{model_type}_training_history.png')
-            plt.show()
-        except Exception as e:
-            print(f"Plotting error: {e}")
-    
-    def train_transfer_learning_model(self, epochs):
-        """Transfer Learning Training - Verbessert"""
-        
-        # Verbesserte Datenaugmentation
-        train_datagen = ImageDataGenerator(
-            rescale=1./255,
-            horizontal_flip=True,
-            rotation_range=20,
-            zoom_range=0.2,
-            width_shift_range=0.15,
-            height_shift_range=0.15,
-            brightness_range=[0.8, 1.2],
-            shear_range=0.1,
-            fill_mode='nearest'
-        )
-        
-        val_datagen = ImageDataGenerator(rescale=1./255)
-        
-        train_generator = train_datagen.flow_from_directory(
-            self.train_dir, target_size=self.img_size, batch_size=self.batch_size, 
-            class_mode='categorical', shuffle=True
-        )
-        
-        val_generator = val_datagen.flow_from_directory(
-            self.val_dir, target_size=self.img_size, batch_size=self.batch_size, 
-            class_mode='categorical', shuffle=False
-        )
-        
-        model = self.build_transfer_learning_model(train_generator.num_classes)
-        model.compile(
-            optimizer=Adam(learning_rate=0.001), 
-            loss='categorical_crossentropy', 
-            metrics=['accuracy']
-        )
-        
-        callbacks = [
-            EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True, verbose=1),
-            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=7, min_lr=1e-7, verbose=1),
-            ModelCheckpoint(f'{self.model_save_dir}best_transfer_learning_model.keras', 
-                          monitor='val_accuracy', save_best_only=True, verbose=1)
-        ]
-        
-        history = model.fit(
-            train_generator,
-            epochs=epochs,
-            validation_data=val_generator,
-            callbacks=callbacks
-        )
-        
-        model.save(f'{self.model_save_dir}final_transfer_learning_model.keras')
-        
-        # Klassen speichern
-        with open(f'{self.model_save_dir}class_indices_transfer_learning.json', 'w') as f:
-            json.dump(train_generator.class_indices, f, indent=2)
-        
-        self.plot_training_history(history, 'transfer_learning')
-        
+
+        label_encoder = LabelEncoder()
+        y_encoded = label_encoder.fit_transform(y_labels)
+        num_classes = len(label_encoder.classes_)
+        with open(f'{self.model_save_dir}class_indices_{model_type}.json', 'w') as f:
+            json.dump({i: c for i, c in enumerate(label_encoder.classes_)}, f, indent=2)
+
+        if model_type == 'frequency_analysis':
+            X_train, X_val, y_train, y_val = train_test_split(X_frequency, y_encoded, stratify=y_encoded, test_size=0.2)
+            model = build_frequency_model(num_classes, X_frequency.shape[1])
+
+        elif model_type == 'temporal_cnn':
+            X_train, X_val, y_train, y_val = train_test_split(X_sequences, y_encoded, stratify=y_encoded, test_size=0.2)
+            model = build_improved_temporal_cnn(num_classes, X_sequences.shape[1], self.img_size)
+
+        elif model_type == 'temporal_transfer':
+            X_train, X_val, y_train, y_val = train_test_split(X_sequences, y_encoded, stratify=y_encoded, test_size=0.2)
+            model = build_temporal_transfer_model(num_classes, X_sequences.shape[1], self.img_size)
+
+        elif model_type == 'lstm_features':
+            X_freq_seq = []
+            for seq in X_sequences:
+                seq_uint8 = [(frame * 255).astype(np.uint8) for frame in seq]
+                seq_feat = self.extract_frequency_features(seq_uint8)
+                X_freq_seq.append(seq_feat)
+            X_freq_seq = np.array(X_freq_seq)
+            X_train, X_val, y_train, y_val = train_test_split(X_freq_seq, y_encoded, stratify=y_encoded, test_size=0.2)
+            model = build_lstm_feature_model(num_classes, X_freq_seq.shape[1], X_freq_seq.shape[2])
+
+        elif model_type == 'hybrid_model':
+            X_images = X_sequences[:, 0]
+            X_train_seq, X_val_seq, X_train_freq, X_val_freq, y_train, y_val = train_test_split(
+                X_images, X_frequency, y_encoded, stratify=y_encoded, test_size=0.2)
+            model = build_hybrid_model(num_classes, X_sequences.shape[1], X_frequency.shape[1], self.img_size)
+
+        # Training vorbereiten
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+        loss_fn = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=0.0005 if model_type in ['temporal_cnn', 'temporal_transfer'] else 0.001)
+        batch_size = self.batch_size
+
+        # Hybrid separat behandelt
+        if model_type == 'hybrid_model':
+            train_dataset = TensorDataset(torch.tensor(X_train_seq, dtype=torch.float32),
+                                          torch.tensor(X_train_freq, dtype=torch.float32),
+                                          torch.tensor(y_train, dtype=torch.long))
+            val_dataset = TensorDataset(torch.tensor(X_val_seq, dtype=torch.float32),
+                                        torch.tensor(X_val_freq, dtype=torch.float32),
+                                        torch.tensor(y_val, dtype=torch.long))
+        else:
+            X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+            y_train_tensor = torch.tensor(y_train, dtype=torch.long)
+            X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
+            y_val_tensor = torch.tensor(y_val, dtype=torch.long)
+            train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+            val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
+
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size)
+
+        best_val_acc = 0
+        history = {"accuracy": [], "val_accuracy": [], "loss": [], "val_loss": []}
+
+        for epoch in range(epochs):
+            model.train()
+            total, correct, running_loss = 0, 0, 0.0
+            for batch in train_loader:
+                if model_type == 'hybrid_model':
+                    X1, X2, y = [b.to(device) for b in batch]
+                    outputs = model(X1, X2)
+                else:
+                    X, y = [b.to(device) for b in batch]
+                    outputs = model(X)
+
+                loss = loss_fn(outputs, y)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                running_loss += loss.item() * y.size(0)
+                total += y.size(0)
+                correct += (outputs.argmax(1) == y).sum().item()
+
+            train_acc = correct / total
+            train_loss = running_loss / total
+
+            # Validierung
+            model.eval()
+            total, correct, val_loss_total = 0, 0, 0.0
+            with torch.no_grad():
+                for batch in val_loader:
+                    if model_type == 'hybrid_model':
+                        X1, X2, y = [b.to(device) for b in batch]
+                        outputs = model(X1, X2)
+                    else:
+                        X, y = [b.to(device) for b in batch]
+                        outputs = model(X)
+                    loss = loss_fn(outputs, y)
+                    val_loss_total += loss.item() * y.size(0)
+                    total += y.size(0)
+                    correct += (outputs.argmax(1) == y).sum().item()
+
+            val_acc = correct / total
+            val_loss = val_loss_total / total
+
+            print(f"[Epoch {epoch+1}] Train acc: {train_acc:.4f} | Val acc: {val_acc:.4f}")
+
+            history["accuracy"].append(train_acc)
+            history["val_accuracy"].append(val_acc)
+            history["loss"].append(train_loss)
+            history["val_loss"].append(val_loss)
+
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                torch.save(model.state_dict(), f"{self.model_save_dir}best_{model_type}_model.pt")
+
+        torch.save(model.state_dict(), f"{self.model_save_dir}final_{model_type}_model.pt")
         return model, history
 
-# Verwendung
+    else:
+        print("Standardmodell nicht unterstützt (nur PyTorch-Modelle).")
+        return None, None
+
 if __name__ == "__main__":
     trainer = EnhancedFocusTrainer(
         train_dir='dataset/train',
         val_dir='dataset/val',
         model_save_dir='models/'
     )
-    
-    # Verschiedene Modelle trainieren
+
     model_types = [
-        #'temporal_transfer',     # NEU: Transfer Learning + Temporal (empfohlen!)
-        'temporal_cnn',         # Verbessertes Temporal CNN
-        #'transfer_learning',    # Verbessertes Transfer Learning
-        # 'frequency_analysis',   # Nur Frequenz-Features
-        # 'lstm_features',       # LSTM auf Feature-Sequenzen
-        # 'hybrid_model'         # Kombination (für Experten)
+        #'temporal_cnn',         
+         'temporal_transfer',
+        # 'frequency_analysis',
+        # 'lstm_features',
+        # 'hybrid_model'
     ]
-    
+
     for model_type in model_types:
         print(f"\n{'='*60}")
         print(f"Training {model_type.upper()} Model")
@@ -692,5 +744,4 @@ if __name__ == "__main__":
             print(f" {model_type} erfolgreich trainiert!")
         except Exception as e:
             print(f" Fehler beim Training von {model_type}: {e}")
-    
-    print("\n Alle Modelle trainiert und gespeichert!")
+

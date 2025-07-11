@@ -3,13 +3,11 @@ import numpy as np
 import json
 import time
 from datetime import datetime, timedelta
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import img_to_array
 import matplotlib.pyplot as plt
 from collections import defaultdict, deque
 
 class ProductivityMonitor:
-    def __init__(self, model_path="models/best_model_finetuned.keras", 
+    def __init__(self, model_path="models/best_transfer_learning_model.keras", 
                  class_indices_path="models/class_indices.json"):
         """
         Initialisiert den Produktivitäts-Monitor
@@ -74,7 +72,8 @@ class ProductivityMonitor:
         self.activity_log = []
         
         # Ringpuffer für letzte 10 Vorhersagen (für Stabilität)
-        self.prediction_buffer = deque(maxlen=10)
+        self.prediction_buffer = deque(maxlen=15)  # größerer Puffer für mehr Stabilität
+
         
     def preprocess_frame(self, frame):
         """Preprocessiert ein Frame für das Modell"""
@@ -111,7 +110,9 @@ class ProductivityMonitor:
         
         # Stabilisierte Vorhersage durch Mehrheitsentscheidung
         if len(self.prediction_buffer) >= 3:
-            recent_predictions = [pred[0] for pred in list(self.prediction_buffer)[-3:]]
+            # Nutze den ganzen Buffer (nicht nur die letzten 3)
+            recent_predictions = [pred[0] for pred in self.prediction_buffer]
+
             # Mehrheitsentscheidung
             from collections import Counter
             most_common = Counter(recent_predictions).most_common(1)[0][0]
@@ -346,7 +347,7 @@ class ProductivityMonitor:
 if __name__ == "__main__":
     # Monitor erstellen und starten
     monitor = ProductivityMonitor(
-        model_path="models/best_model_finetuned.keras",
+        model_path="models/models/temporal_cnn_model.pth",
         class_indices_path="models/class_indices.json"
     )
     

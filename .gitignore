@@ -1,6 +1,12 @@
 *.mp4
 raw_video/
 *.h5
-.venv/
-tf-gpu-env/
-
+__pycache__/
+*.pyc
+.keras
+models/
+dataset/abgelenkt/
+dataset/fokussiert/
+dataset/handy/
+dataset/nicht_anwesend/
+.pth
