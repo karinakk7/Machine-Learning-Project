@@ -11,6 +11,19 @@ label_map = {
 }
 
 
+import cv2
+import numpy as np
+import os
+
+# Zuordnung der Labels
+label_map = {
+    "abgelenkt": 0,
+    "fokussiert": 1,
+    "handy": 2,
+    "abwesend": 3
+}
+
+
 def extract_video_sequence(video_path, num_frames=10, target_size=(224, 224)):
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -49,13 +62,13 @@ def load_dataset_from_videos(video_dir, label_map, num_frames=10):
                 label = label_map[label_name]
                 break
         else:
-            continue  # kein Label erkannt
+            continue  
 
         video_path = os.path.join(video_dir, filename)
         sequence = extract_video_sequence(video_path, num_frames=num_frames)
         X.append(sequence)
         y.append(label)
 
-    X = np.array(X)  # Shape: (num_samples, num_frames, 224, 224, 3)
-    y = np.array(y)  # Shape: (num_samples,)
+    X = np.array(X)  
+    y = np.array(y)  
     return X, y
