@@ -1,3 +1,7 @@
 *.mp4
 raw_video/
 *.h5
+__pycache__/
+*.pyc
+.keras
+

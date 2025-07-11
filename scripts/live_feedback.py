@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 from collections import defaultdict, deque
 
 class ProductivityMonitor:
-    def __init__(self, model_path="models/best_model_finetuned.keras", 
-                 class_indices_path="models/class_indices.json"):
+    def __init__(self, model_path="models/best_temporal_cnn_model.keras", 
+        class_indices_path="models/class_indices.json"):
         """
         Initialisiert den Produktivitäts-Monitor
         
@@ -258,10 +258,21 @@ class ProductivityMonitor:
                 activity_durations[last_activity['activity']] += duration
             
             print("\n📈 Zeitverteilung:")
+    
+            total_percentage = 0
+
             for activity, duration in activity_durations.items():
                 percentage = (duration / total_time) * 100
+                total_percentage += percentage
                 print(f"  {activity}: {duration/60:.1f} min ({percentage:.1f}%)")
-            
+
+            # Berechne die Differenz zu 100 %
+            uncertainty = 100 - total_percentage
+
+            # Wenn die Differenz signifikant ist (>0.1 %), gib sie aus
+            if abs(uncertainty) >= 0.1:
+                print(f"  Ungewiss: {uncertainty:.1f}%")
+
             # Produktivitätsscore
             focused_time = activity_durations.get('fokussiert', 0)
             productivity_score = (focused_time / total_time) * 100
@@ -346,7 +357,7 @@ class ProductivityMonitor:
 if __name__ == "__main__":
     # Monitor erstellen und starten
     monitor = ProductivityMonitor(
-        model_path="models/best_model_finetuned.keras",
+        model_path="models/best_temporal_cnn_model.keras", 
         class_indices_path="models/class_indices.json"
     )
     
