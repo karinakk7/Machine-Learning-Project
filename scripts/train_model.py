@@ -15,12 +15,32 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 from tensorflow.keras.utils import to_categorical
+import tensorflow as tf
+
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print("GPU-Speicher konnte nicht angepasst werden:", e)
+
+
 import json
 import math
 import seaborn as sns
 from scipy import signal
 from scipy.fft import fft
 import pickle
+
+import os
+
+# Ermittle Pfad zum Projekt-Root (2 Ebenen über diesem Skript)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+data_path = os.path.join(project_root, "dataset", "train")
+print("Datenpfad:", data_path)
+
 
 
 class EnhancedFocusTrainer:
@@ -30,7 +50,7 @@ class EnhancedFocusTrainer:
         self.val_dir = val_dir
         self.model_save_dir = model_save_dir
         self.img_size = img_size
-        self.batch_size = 32
+        self.batch_size = 8
         
         # Modell-Typen
         self.model_types = {
