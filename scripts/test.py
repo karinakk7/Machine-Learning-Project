@@ -1,26 +1,26 @@
 import os
+import shutil
 
-# Wurzelordner mit train/ und val/
-base_dir = 'dataset'
+source_root = "raw_videos"
+target_root = os.path.join("raw_videos_test", "raw_videos")
 
-# Unterordner (train und val)
-splits = ['train', 'val']
+# Stelle sicher, dass Zielordner existieren
+classes = ["abgelenkt", "fokussiert", "handy", "nicht_anwesend"]
+for cls in classes:
+    os.makedirs(os.path.join(target_root, cls), exist_ok=True)
 
-for split in splits:
-    print(f"\n📂 {split.upper()}:")
+# Durchlaufe Klassen und kopiere Videos
+for cls in classes:
+    src_class_dir = os.path.join(source_root, cls)
+    dst_class_dir = os.path.join(target_root, cls)
 
-    split_path = os.path.join(base_dir, split)
-    if not os.path.exists(split_path):
-        print(f"⚠️ Ordner {split_path} nicht gefunden.")
-        continue
+    for file in os.listdir(src_class_dir):
+        if file.lower().endswith(".mp4"):
+            src_path = os.path.join(src_class_dir, file)
+            dst_path = os.path.join(dst_class_dir, file)
 
-    for class_name in os.listdir(split_path):
-        class_path = os.path.join(split_path, class_name)
-        if not os.path.isdir(class_path):
-            continue
+            # Datei kopieren
+            shutil.copy2(src_path, dst_path)
+            print(f"✅ {file} → {dst_class_dir}")
 
-        count = len([
-            f for f in os.listdir(class_path)
-            if f.endswith(('.jpg', '.png', '.jpeg'))
-        ])
-        print(f"  🔸 {class_name}: {count} Bilder")
+print("📦 Alle Videos erfolgreich kopiert.")
