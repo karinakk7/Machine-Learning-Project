@@ -5,6 +5,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 from torch.utils.data import DataLoader
+from torch.utils.data import Subset, ConcatDataset
 
 
 if torch.cuda.is_available():
@@ -32,8 +33,16 @@ transform = transforms.Compose([
                          std=[0.229, 0.224, 0.225]),
 ])
 
-train_dataset = datasets.ImageFolder(root="dataset/train", transform=transform)
-val_dataset = datasets.ImageFolder(root="dataset/val", transform=transform)
+
+full_train = datasets.ImageFolder("dataset/train", transform=transform)
+val_dataset = ConcatDataset([
+    datasets.ImageFolder("dataset/val", transform=transform),
+    Subset(full_train, list(range(9, len(full_train), 10)))
+])
+train_dataset = Subset(full_train, [i for i in range(len(full_train)) if i % 10 != 9])
+
+#train_dataset = datasets.ImageFolder(root="dataset/train", transform=transform)
+#val_dataset = datasets.ImageFolder(root="dataset/val", transform=transform)
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -96,7 +105,7 @@ for epoch in range(EPOCHS):
 
     if val_acc > best_val_acc:
         best_val_acc = val_acc
-        torch.save(model.state_dict(), "models/best_cnn_model.pth")
+        torch.save(model.state_dict(), "models/best_cnn_modelNeues.pth")
         print(f" Neues bestes Modell gespeichert bei {val_acc:.2f}%")
 
 print(" Training abgeschlossen.")
